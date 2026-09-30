@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export const INK = 0x1c1a1f;
-export const RED = 0xe23b2e;
+export const RED = 0xc4303d;
 
 export function toonGradient() {
   const data = new Uint8Array([120, 205, 255]);
@@ -19,8 +19,9 @@ export function makeMaterials(gradientMap) {
     white: toon(0xfffdf8),
     ink: toon(INK),
     red: toon(RED),
-    blush: new THREE.MeshBasicMaterial({ color: 0xffb3b0, transparent: true, opacity: 0.85 }),
+    blush: new THREE.MeshBasicMaterial({ color: 0xffb3b0, transparent: true, opacity: 0.7 }),
     shine: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+    speck: new THREE.MeshBasicMaterial({ color: 0xe9e9ef }),
     tongue: toon(0xff7b8a),
     outline: new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide }),
   };
@@ -46,18 +47,20 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
-// Pochacco's head: a bun — round on top, puffy cheeks that bulge out at the bottom.
-const HEAD = { A: 0.93, B: 0.86, C: 0.82 };
+// Pochacco's head, from the reference sheets: a tall dome whose lower third
+// swells into round cheeks (a bell), with a soft, wide chin.
+const HEAD = { A: 0.84, B: 0.89, C: 0.8 };
 function deformHead(x, y, z, out) {
-  const cheek = smooth(0.3, -0.55, y) * (1 - smooth(-0.75, -1, y) * 0.6);
-  const widen = 1 + 0.11 * cheek;
+  const g = Math.exp(-(((y + 0.5) / 0.3) ** 2)); // cheek band
+  const top = smooth(0.25, 1, y);
+  const widen = (1 + 0.3 * g) * (1 - 0.06 * top);
   let yy = y;
-  if (yy < -0.72) yy = -0.72 + (yy + 0.72) * 0.6; // softly flattened chin
-  return out.set(x * HEAD.A * widen, yy * HEAD.B, z * HEAD.C * (1 + 0.1 * cheek));
+  if (yy < -0.78) yy = -0.78 + (yy + 0.78) * 0.55; // softly flattened chin
+  return out.set(x * HEAD.A * widen, yy * HEAD.B, z * HEAD.C * (1 + 0.12 * g));
 }
 
 function headGeometry() {
-  const g = new THREE.SphereGeometry(1, 64, 48);
+  const g = new THREE.SphereGeometry(1, 72, 54);
   const p = g.attributes.position;
   const v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
@@ -92,17 +95,19 @@ function place(obj, x, y, lift = 0) {
   return obj;
 }
 
-// Leaf-shaped floppy ear, grown along +y from its base.
+// Long leaf-shaped ear: pinched at the base, fullest ~2/3 out, rounded tip.
+const EAR = { L: 0.92, W: 0.225, flat: 0.36 };
+const earRadius = (t) => EAR.W * Math.sin(Math.PI * Math.pow(t, 1.45));
 function earGeometry() {
-  const L = 0.86, W = 0.25, pts = [];
-  const N = 28;
+  const pts = [];
+  const N = 32;
   for (let i = 0; i <= N; i++) {
     const t = i / N;
-    pts.push(new THREE.Vector2(Math.max(W * Math.sin(Math.PI * Math.pow(t, 1.55)), 0.0005), t * L));
+    pts.push(new THREE.Vector2(Math.max(earRadius(t), 0.0005), t * EAR.L));
   }
-  const g = new THREE.LatheGeometry(pts, 36);
-  g.translate(0, -L * 0.5, 0);
-  return { g, L };
+  const g = new THREE.LatheGeometry(pts, 40);
+  g.translate(0, -EAR.L * 0.5, 0);
+  return g;
 }
 
 export function createPochacco(mats) {
@@ -112,27 +117,35 @@ export function createPochacco(mats) {
   const squash = new THREE.Group(); // squash & stretch from the feet
   root.add(hop);
   hop.add(squash);
+  // parts that fly apart in the blueprint (exploded-view) section
+  const parts = {};
+  const part = (key, obj, dir) => {
+    parts[key] = { obj, base: obj.position.clone(), dir: new THREE.Vector3(...dir) };
+    return obj;
+  };
 
   // ── lower body (white) + legs ──────────────────────────────
-  squash.add(inked(S, mats.white, mats, { pos: [0, 0.42, 0], scale: [0.5, 0.36, 0.44] }));
+  const hips = inked(S, mats.white, mats, { pos: [0, 0.42, 0], scale: [0.5, 0.36, 0.44] });
+  squash.add(part('hips', hips, [0, -0.25, 0]));
 
   const legGeo = new THREE.CapsuleGeometry(0.15, 0.1, 8, 18);
   const legs = [-1, 1].map((s) => {
     const pivot = new THREE.Group();
     pivot.position.set(0.22 * s, 0.33, 0.04);
     pivot.add(inked(legGeo, mats.white, mats, { pos: [0, -0.13, 0.02], outline: 0.08 }));
-    // tiny paw-pad toe lines
-    const toe = new THREE.Mesh(S, mats.ink);
-    toe.scale.set(0.012, 0.035, 0.01);
-    toe.position.set(0.03 * s, -0.25, 0.15);
-    pivot.add(toe);
-    squash.add(pivot);
+    for (const dx of [-0.035, 0.035]) {
+      const toe = new THREE.Mesh(S, mats.ink);
+      toe.scale.set(0.011, 0.032, 0.01);
+      toe.position.set(dx, -0.25, 0.155);
+      pivot.add(toe);
+    }
+    squash.add(part(s < 0 ? 'legL' : 'legR', pivot, [0.3 * s, -0.45, 0.05]));
     return pivot;
   });
 
-  // ── red T-shirt ────────────────────────────────────────────
+  // ── crimson T-shirt ────────────────────────────────────────
   const shirt = inked(S, mats.red, mats, { pos: [0, 0.74, 0], scale: [0.56, 0.4, 0.48], outline: 0.045 });
-  squash.add(shirt);
+  squash.add(part('shirt', shirt, [0, 0, 0]));
 
   // ── arms: red sleeve + white nub ───────────────────────────
   const armGeo = new THREE.CapsuleGeometry(0.115, 0.2, 8, 18);
@@ -145,7 +158,7 @@ export function createPochacco(mats) {
     const hand = new THREE.Object3D();
     hand.position.set(0, -0.42, 0);
     pivot.add(hand);
-    squash.add(pivot);
+    squash.add(part(s < 0 ? 'armL' : 'armR', pivot, [0.75 * s, 0.05, 0]));
     return { pivot, hand, s };
   });
 
@@ -156,99 +169,115 @@ export function createPochacco(mats) {
   const tailGeo = new THREE.CapsuleGeometry(0.07, 0.14, 6, 12);
   tail.add(inked(tailGeo, mats.white, mats, { pos: [0, 0.08, 0], outline: 0.12 }));
   tail.add(inked(S, mats.ink, mats, { pos: [0, 0.22, 0], scale: [0.09, 0.12, 0.09], outline: 0.08 }));
-  squash.add(tail);
+  squash.add(part('tail', tail, [0.35, -0.1, -0.7]));
 
   // ── head ───────────────────────────────────────────────────
   const neck = new THREE.Group();
-  neck.position.set(0, 1.06, 0);
-  squash.add(neck);
+  neck.position.set(0, 1.04, 0);
+  squash.add(part('head', neck, [0, 0.75, 0]));
   const head = new THREE.Group();
-  head.position.set(0, 0.56, 0);
+  head.position.set(0, 0.6, 0);
   neck.add(head);
-  head.add(inked(headGeometry(), mats.white, mats, { outline: 0.03 }));
+  head.add(inked(headGeometry(), mats.white, mats, { outline: 0.028 }));
 
-  // eyes — small upright ovals, set wide & low
+  // face features share one group so the blueprint can pop them forward
+  const face = new THREE.Group();
+  head.add(part('face', face, [0, -0.05, 0.45]));
+
+  // eyes — small upright ovals, set low and wide apart
   const eyesOpen = [];
   const eyesHappy = [];
   const arc = new THREE.TorusGeometry(0.06, 0.018, 8, 24, Math.PI);
   [-1, 1].forEach((s) => {
-    const eye = place(new THREE.Group(), 0.37 * s, -0.12);
+    const eye = place(new THREE.Group(), 0.35 * s, -0.36);
     const pupil = new THREE.Mesh(S, mats.ink);
-    pupil.scale.set(0.058, 0.082, 0.035);
+    pupil.scale.set(0.056, 0.075, 0.035);
     const shine = new THREE.Mesh(S, mats.shine);
-    shine.scale.set(0.016, 0.02, 0.01);
-    shine.position.set(0.018, 0.03, 0.03);
+    shine.scale.set(0.014, 0.018, 0.01);
+    shine.position.set(0.016, 0.028, 0.03);
     eye.add(pupil, shine);
-    head.add(eye);
+    face.add(eye);
     eyesOpen.push(eye);
 
-    const happy = place(new THREE.Mesh(arc, mats.ink), 0.37 * s, -0.14, 0.006);
+    const happy = place(new THREE.Mesh(arc, mats.ink), 0.35 * s, -0.38, 0.006);
     happy.visible = false;
-    head.add(happy);
+    face.add(happy);
     eyesHappy.push(happy);
 
-    // blush
-    const blush = place(new THREE.Mesh(new THREE.CircleGeometry(0.1, 32), mats.blush), 0.62 * s, -0.36, 0.012);
-    blush.scale.set(1.2, 0.8, 1);
-    head.add(blush);
+    const blush = place(new THREE.Mesh(new THREE.CircleGeometry(0.085, 32), mats.blush), 0.62 * s, -0.56, 0.014);
+    blush.scale.set(1.25, 0.8, 1);
+    face.add(blush);
   });
 
-  // nose — a little horizontal bean
-  const nose = place(new THREE.Mesh(S, mats.ink), 0, -0.25);
-  nose.scale.set(0.078, 0.055, 0.045);
+  // nose — a wide little bean, just below the eye line
+  const nose = place(new THREE.Mesh(S, mats.ink), 0, -0.47);
+  nose.scale.set(0.082, 0.055, 0.045);
   const noseShine = new THREE.Mesh(S, mats.shine);
-  noseShine.scale.set(0.25, 0.22, 0.2);
-  noseShine.position.set(-0.3, 0.35, 0.85);
+  noseShine.scale.set(0.22, 0.2, 0.2);
+  noseShine.position.set(-0.3, 0.38, 0.85);
   nose.add(noseShine);
-  head.add(nose);
+  face.add(nose);
 
   // open mouth (only while barking)
-  const mouthOpen = place(new THREE.Group(), 0, -0.42, 0.004);
+  const mouthOpen = place(new THREE.Group(), 0, -0.62, 0.004);
   const mo = new THREE.Mesh(S, mats.ink);
-  mo.scale.set(0.07, 0.06, 0.02);
+  mo.scale.set(0.065, 0.055, 0.02);
   const tongue = new THREE.Mesh(S, mats.tongue);
-  tongue.scale.set(0.045, 0.03, 0.012);
-  tongue.position.set(0, -0.025, 0.012);
+  tongue.scale.set(0.042, 0.028, 0.012);
+  tongue.position.set(0, -0.022, 0.012);
   mouthOpen.add(mo, tongue);
   mouthOpen.scale.setScalar(0.001);
-  head.add(mouthOpen);
+  face.add(mouthOpen);
 
-  // cheek contour strokes (the little curve where the cheeks puff)
-  const cheekGeo = new THREE.TorusGeometry(0.1, 0.014, 6, 16, Math.PI * 0.55);
+  // crease strokes where the dome meets the puffy cheeks
+  const creaseGeo = new THREE.TorusGeometry(0.13, 0.013, 6, 18, Math.PI * 0.45);
   [-1, 1].forEach((s) => {
-    const c = place(new THREE.Mesh(cheekGeo, mats.ink), 0.84 * s, -0.36, 0.004);
-    c.rotateZ(s > 0 ? Math.PI * 0.95 : Math.PI * 1.5);
-    head.add(c);
+    const c = place(new THREE.Mesh(creaseGeo, mats.ink), 0.86 * s, -0.3, 0.004);
+    c.rotateZ(s > 0 ? Math.PI * 0.78 : Math.PI * 1.77);
+    face.add(c);
   });
 
-  // three hair tufts on top
-  const tuftGeo = new THREE.CapsuleGeometry(0.018, 0.1, 4, 8);
+  // three hair strokes floating just above the dome: two on the left, one arc on the right
   const tufts = new THREE.Group();
-  tufts.position.set(0, HEAD.B - 0.02, 0.05);
-  [-0.35, 0, 0.35].forEach((a, i) => {
-    const t = new THREE.Mesh(tuftGeo, mats.ink);
-    t.position.set(Math.sin(a) * 0.14, 0.06 + (i === 1 ? 0.03 : 0), 0);
-    t.rotation.z = -a * 1.4;
+  tufts.position.set(0, HEAD.B + 0.07, 0.14);
+  const wedge = new THREE.ConeGeometry(0.03, 0.15, 10);
+  [[-0.26, 0.02, 0.62], [-0.11, 0.05, 0.22]].forEach(([x, y, rz]) => {
+    const t = new THREE.Mesh(wedge, mats.ink);
+    t.position.set(x, y, 0);
+    t.rotation.set(0, 0, rz + Math.PI); // thick end up, thin end down toward the head
     tufts.add(t);
   });
-  head.add(tufts);
+  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.022, 8, 20, 1.3), mats.ink);
+  hook.position.set(0.14, -0.08, 0);
+  hook.rotation.z = 0.75;
+  tufts.add(hook);
+  head.add(part('tufts', tufts, [0, 0.45, 0.1]));
 
-  // ears — one perked up, one flopped sideways (the signature asymmetry)
-  const { g: earGeo, L: EL } = earGeometry();
+  // ears — one standing up, one flopped out sideways; glossy white specks
+  const earGeo = earGeometry();
   const earDefs = [
-    { s: -1, at: [-0.44, 0.76], base: 0.42, z: 0.12 },  // up, leaning left
-    { s: 1, at: [0.74, 0.5], base: -1.72, z: 0.0 },     // flopped out to the right
+    { s: -1, at: [-0.56, 0.74], base: 0.42, z: 0.14, key: 'earL', dir: [-0.6, 0.22, 0] },  // up
+    { s: 1, at: [0.62, 0.62], base: -1.6, z: 0.02, key: 'earR', dir: [0.6, 0.1, 0] },     // sideways
   ];
+  const specks = [[0.3, -0.02, 0.9], [0.42, 0.05, 0.55], [0.55, -0.05, 1], [0.7, 0.04, 0.7], [0.82, -0.02, 0.5]];
   const ears = earDefs.map((d) => {
     const pivot = new THREE.Group();
     const { p } = onHead(d.at[0], d.at[1]);
-    pivot.position.copy(p).multiplyScalar(0.9);
+    pivot.position.copy(p).multiplyScalar(0.92);
     pivot.position.z = d.z;
-    pivot.rotation.set(0, 0.25 * d.s, d.base);
-    pivot.add(inked(earGeo, mats.ink, mats, { pos: [0, EL * 0.5 - 0.04, 0], scale: [1, 1, 0.38], outline: 0.05 }));
-    head.add(pivot);
+    pivot.rotation.set(0, 0.2 * d.s, d.base);
+    pivot.add(inked(earGeo, mats.ink, mats, { pos: [0, EAR.L * 0.5 - 0.04, 0], scale: [1, 1, EAR.flat], outline: 0.05 }));
+    for (const [t, xo, k] of specks) {
+      const r = earRadius(t);
+      const sp = new THREE.Mesh(S, mats.speck);
+      sp.scale.set(0.016 * k + 0.008, 0.034 * k + 0.012, 0.006);
+      sp.position.set(xo * r * 2.2, t * EAR.L - 0.04, r * EAR.flat + 0.004);
+      sp.rotation.z = xo * 3;
+      pivot.add(sp);
+    }
+    head.add(part(d.key, pivot, d.dir));
     return { pivot, s: d.s, base: d.base, angle: 0, vel: 0 };
   });
 
-  return { root, hop, squash, neck, head, ears, arms, legs, tail, tufts, eyesOpen, eyesHappy, mouthOpen };
+  return { root, hop, squash, neck, head, face, nose, ears, arms, legs, tail, tufts, eyesOpen, eyesHappy, mouthOpen, parts };
 }

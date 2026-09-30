@@ -1,5 +1,6 @@
 import { createStage } from './stage.js';
 import { createSfx } from './sfx.js';
+import { createLiquid } from './liquid.js';
 
 const anime = window.anime;
 const $ = (s, el = document) => el.querySelector(s);
@@ -52,8 +53,17 @@ const stage = createStage($('#stage'), {
   sfx,
   onBark: showBubble,
   onHover: (h) => document.body.classList.toggle('c-poch', h),
-  onShot: (made) => game.result(made),
+  onPoke: () => fever.poke(),
+  onScore: (e) => game.score(e),
+  onMiss: (e) => game.miss(e),
+  onRound: (e) => game.round(e),
+  onTick: (r) => game.tick(r),
+  onBanner: (text, kind) => banner(text, kind),
+  onBeat: (n) => fever.beat(n),
+  onFeverEnd: () => fever.end(),
 });
+let liquid = null;
+try { liquid = createLiquid($('#liquid')); } catch (err) { console.warn('liquid background disabled', err); }
 
 // ── magnetic buttons ─────────────────────────────────────────
 $$('[data-magnetic]').forEach((el) => {
@@ -154,7 +164,7 @@ $$('a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => {
 
 // ── choreography: which section is Pochacco "in"? ────────────
 const sections = $$('[data-scene]');
-const BG = { hero: '#8fd0ff', profile: '#fff3dc', personality: '#7fe0c2', sports: '#1f1c26', icecream: '#ffd23f', outro: '#8fd0ff' };
+const BG = { hero: '#8fd0ff', profile: '#fff3dc', anatomy: '#2450b8', personality: '#7fe0c2', sports: '#1f1c26', icecream: '#ffd23f', outro: '#8fd0ff' };
 let holds = [];
 function measure() {
   const vh = innerHeight;
@@ -186,6 +196,56 @@ function mix(c1, c2, t) {
   return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',')})`;
 }
 
+function sectionProgress(name, y) {
+  const h = holds.find((q) => q.name === name);
+  return h ? clamp((y - h.top) / (h.h - innerHeight), 0, 1) : 0;
+}
+
+// ── blueprint callouts: labels + dashed leader lines to the 3D parts ──
+const bpPin = $('#anatomy .pin'), bpSvg = $('.bp-lines'), bpBar = $('#bp-bar'), bpPct = $('#bp-pct');
+const bpLabels = $$('.bp-label').map((el, i) => {
+  const ns = 'http://www.w3.org/2000/svg';
+  const path = document.createElementNS(ns, 'path');
+  const dotEl = document.createElementNS(ns, 'circle');
+  bpSvg.append(path, dotEl);
+  return { el, i, key: el.dataset.anchor, left: el.dataset.side === 'l', path, dot: dotEl, k: -1 };
+});
+function updateBlueprint(p) {
+  const w = stage.weights.anatomy || 0;
+  if (w < 0.02) {
+    if (bpSvg.style.display !== 'none') {
+      bpSvg.style.display = 'none';
+      bpLabels.forEach((l) => { l.el.style.opacity = 0; l.k = -1; });
+    }
+    return;
+  }
+  bpSvg.style.display = '';
+  const e = stage.explode;
+  bpBar.style.width = `${Math.min(100, e * 100)}%`;
+  bpPct.textContent = `${Math.round(Math.min(1, e) * 100)}%`;
+  const pinTop = bpPin.getBoundingClientRect().top;
+  const anchors = stage.anchors();
+  for (const l of bpLabels) {
+    const k = clamp((e - 0.35 - l.i * 0.05) / 0.25, 0, 1) * w;
+    if (Math.abs(k - l.k) > 0.001) {
+      l.k = k;
+      l.el.style.opacity = k;
+      l.el.style.transform = `translateY(${(1 - k) * 20}px) scale(${0.8 + 0.2 * k})`;
+    }
+    const a = anchors[l.key];
+    const sx = l.left ? l.el.offsetLeft + l.el.offsetWidth : l.el.offsetLeft;
+    // svg lives in the sticky pin, so convert viewport → pin space
+    const sy = l.el.offsetTop + l.el.offsetHeight / 2;
+    const ay = a.y - pinTop;
+    const mx = sx + (a.x - sx) * 0.35;
+    l.path.setAttribute('d', `M${sx} ${sy} L${mx} ${sy} L${a.x} ${ay}`);
+    l.path.style.opacity = k;
+    l.dot.setAttribute('cx', a.x);
+    l.dot.setAttribute('cy', ay);
+    l.dot.setAttribute('r', 6 * k);
+  }
+}
+
 // ── personality: pinned horizontal track ─────────────────────
 const persona = $('#personality'), track = $('.track', persona), ground = $('.run-ground i'), runMeter = $('#run-meter'), runM = $('#run-m');
 const words = $$('.panel-word', persona);
@@ -208,43 +268,153 @@ function updatePersona(y, vel) {
   }
 }
 
-// ── mini game ────────────────────────────────────────────────
-const needle = $('#needle'), shootBtn = $('#shoot'), shotText = $('#shot-text');
+// ── big center banner (countdown, ON FIRE, TIME UP…) ─────────
+const shotText = $('#shot-text');
+function banner(text, kind = '') {
+  shotText.textContent = text;
+  shotText.className = `shot-text ${kind}`;
+  anime.remove(shotText);
+  anime({
+    targets: shotText, opacity: [{ value: 1, duration: 100 }, { value: 0, duration: 350, delay: 550 }],
+    scale: [{ value: [0.2, 1.05], duration: 650, easing: 'easeOutElastic(1, .45)' }, { value: 1.35, duration: 350 }],
+    rotate: [anime.random(-10, 10), 0], easing: 'easeOutQuad',
+  });
+}
+
+// floating "+3 SWISH!" at the rim
+function pop(html, x, y, cls = '') {
+  const el = document.createElement('div');
+  el.className = `pop ${cls}`;
+  el.innerHTML = html;
+  $('#pops').appendChild(el);
+  const w = el.offsetWidth, h = el.offsetHeight;
+  el.style.left = `${x - w / 2}px`;
+  el.style.top = `${y - h}px`;
+  anime({
+    targets: el, translateY: [{ value: -30, duration: 300, easing: 'easeOutBack' }, { value: -110, duration: 700, easing: 'easeInQuad' }],
+    scale: [{ value: [0.3, 1.1], duration: 400, easing: 'easeOutElastic(1, .5)' }, { value: 0.8, duration: 600 }],
+    rotate: anime.random(-12, 12), opacity: [{ value: 1, duration: 100 }, { value: 0, duration: 400, delay: 550 }],
+    complete: () => el.remove(),
+  });
+}
+
+// ── basketball: slingshot input + round HUD ──────────────────
+const court = $('#court'), sportsSec = $('#sports'), gameEl = $('#game');
+const playBtn = $('#play'), tip = $('#game-tip'), resultEl = $('#result');
+const streakEl = $('#streak'), streakDots = $$('span', streakEl);
+const hoops = stage.hoops;
+$('#best').textContent = hoops.round.best;
+court.addEventListener('pointerenter', () => document.body.classList.add('c-aim'));
+court.addEventListener('pointerleave', () => document.body.classList.remove('c-aim'));
+court.addEventListener('pointerdown', (e) => {
+  if (!hoops.aimStart(e.clientX, e.clientY)) return;
+  court.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+court.addEventListener('pointermove', (e) => hoops.aimMove(e.clientX, e.clientY));
+const release = () => hoops.aimEnd();
+court.addEventListener('pointerup', release);
+court.addEventListener('pointercancel', release);
+playBtn.addEventListener('click', () => {
+  hoops.start();
+  anime({ targets: playBtn, scale: [0.85, 1], duration: 600, easing: 'easeOutElastic(1, .4)' });
+});
+
+function setStreak(n, fire) {
+  streakDots.forEach((d, i) => d.classList.toggle('on', i < Math.min(n, 3)));
+  streakEl.classList.toggle('fire', !!fire);
+  gameEl.classList.toggle('fire', !!fire);
+}
 const game = {
-  score: 0, streak: 0, best: 0, v: 0,
-  shoot() {
-    if (stage.busy) return;
-    const made = Math.abs(this.v - 0.5) < 0.1;
-    if (!stage.shoot(made)) return;
-    anime({ targets: shootBtn, scale: [0.85, 1], duration: 600, easing: 'easeOutElastic(1, .4)' });
+  score(e) {
+    pop(`+${e.pts}<small>${e.label}${e.fire ? ' 🔥x2' : ''}</small>`, e.x, e.y, e.fire ? 'fire' : '');
+    if (e.practice) return;
+    $('#score').textContent = e.score;
+    anime({ targets: '#score', scale: [1.8, 1], duration: 700, easing: 'easeOutElastic(1, .4)' });
+    setStreak(e.streak, e.fire);
   },
-  result(made) {
-    if (made) {
-      this.score++;
-      this.streak++;
-      this.best = Math.max(this.best, this.streak);
-    } else this.streak = 0;
-    $('#score').textContent = this.score;
-    $('#streak').textContent = this.streak;
-    $('#best').textContent = this.best;
-    anime({ targets: ['#score', '#streak'], scale: [1.6, 1], duration: 700, easing: 'easeOutElastic(1, .4)' });
-    const msg = made ? (this.streak >= 3 ? `${this.streak} COMBO!` : ['SWISH!', 'NICE!', '골인!'][this.score % 3]) : ['아깝다!', 'MISS!', '다시!'][this.streak % 3 + (this.score % 2)] || 'MISS!';
-    shotText.textContent = msg;
-    shotText.style.color = made ? 'var(--banana)' : 'var(--cream)';
-    anime.remove(shotText);
-    anime({
-      targets: shotText, opacity: [{ value: 1, duration: 120 }, { value: 0, duration: 400, delay: 700 }],
-      scale: [{ value: [0.2, 1.1], duration: 700, easing: 'easeOutElastic(1, .45)' }, { value: 1.4, duration: 400 }],
-      rotate: [anime.random(-12, 12), 0], easing: 'easeOutQuad',
-    });
+  miss(e) {
+    pop('MISS', e.x, e.y, 'miss');
+    if (hoops.round.playing) setStreak(0, false);
+  },
+  tick(r) {
+    $('#time').textContent = Math.ceil(r.time);
+    $('#timebar').style.transform = `scaleX(${r.time / 30})`;
+    gameEl.classList.toggle('hurry', r.time < 10);
+  },
+  round(e) {
+    if (e.phase === 'countdown') {
+      resultEl.hidden = true;
+      playBtn.hidden = true;
+      tip.textContent = '준비…!';
+      sportsSec.classList.add('playing');
+      $('#score').textContent = 0;
+      $('#time').textContent = 30;
+      $('#timebar').style.transform = 'scaleX(1)';
+      setStreak(0, false);
+    } else if (e.phase === 'count') {
+      banner(e.n > 0 ? String(e.n) : 'GO!');
+    } else if (e.phase === 'play') {
+      tip.textContent = '당겼다 놓아서 슛! 🏀';
+    } else if (e.phase === 'end') {
+      sportsSec.classList.remove('playing');
+      gameEl.classList.remove('hurry');
+      setStreak(0, false);
+      banner('TIME UP!');
+      $('#rank').textContent = e.rank;
+      $('#r-score').textContent = e.score;
+      $('#r-makes').textContent = e.makes;
+      $('#r-shots').textContent = e.shots;
+      $('#r-best').hidden = !(e.newBest && e.score > 0);
+      $('#best').textContent = e.best;
+      resultEl.hidden = false;
+      anime({ targets: '#rank', scale: [0.3, 1], rotate: [-12, 0], duration: 1000, easing: 'easeOutElastic(1, .45)' });
+      playBtn.hidden = false;
+      $('span', playBtn).textContent = '↻ 다시 하기';
+      tip.textContent = '';
+    }
   },
 };
-shootBtn.addEventListener('click', () => game.shoot());
+
+// ── FEVER mode: type "pochacco" or poke him 7 times fast ─────
+const feverText = $('#fever-text');
+const fever = {
+  pokes: [],
+  poke() {
+    const now = performance.now();
+    this.pokes = this.pokes.filter((t) => now - t < 3500);
+    this.pokes.push(now);
+    if (this.pokes.length >= 7) this.start();
+  },
+  start() {
+    if (stage.fevering) return;
+    this.pokes = [];
+    stage.fever(9);
+    document.body.classList.add('fever');
+    anime.remove(feverText);
+    anime({ targets: feverText, opacity: [0, 1], duration: 200, easing: 'linear' });
+    anime({
+      targets: '#fever-text span', translateY: ['-120vh', 0], rotate: [anime.stagger([-60, 60]), 0],
+      delay: anime.stagger(60), duration: 900, easing: 'easeOutElastic(1, .5)',
+    });
+    anime({ targets: feverText, opacity: 0, delay: 1800, duration: 500, easing: 'easeInQuad' });
+  },
+  beat(n) {
+    liquid?.beat();
+    if (!reduced) {
+      anime({ targets: '.hero-title .ch, .outro-title .c', scale: [1.12, 1], duration: 380, easing: 'easeOutQuad' });
+    }
+  },
+  end() {
+    document.body.classList.remove('fever');
+    showBubble('헥헥… 재밌었다!');
+  },
+};
+let typed = '';
 addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && (stage.weights.sports || 0) > 0.5) {
-    e.preventDefault();
-    game.shoot();
-  }
+  if (e.key.length !== 1) return;
+  typed = (typed + e.key.toLowerCase()).slice(-8);
+  if (typed === 'pochacco') fever.start();
 });
 
 $('#treat').addEventListener('click', () => stage.treat());
@@ -309,7 +479,7 @@ function runIntro() {
 
 // ── main loop ────────────────────────────────────────────────
 const progress = $('#progress');
-let last = performance.now(), prevY = 0, vel = 0, gameT = 0;
+let last = performance.now(), prevY = 0, vel = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min((now - last) / 1000, 0.05);
@@ -319,12 +489,15 @@ function frame(now) {
   vel = vel + ((y - prevY) / Math.max(dt, 1e-3) * 0.016 - vel) * 0.2;
   prevY = y;
 
-  const c = choreo(y + innerHeight * 0.0);
-  document.body.style.background = mix(BG[c.a], BG[c.b], c.t);
-  const dark = (c.t < 0.5 ? c.a : c.b) === 'sports';
-  document.body.classList.toggle('dark-zone', dark);
+  const c = choreo(y);
+  if (liquid) liquid.update(dt, { a: BG[c.a], b: BG[c.b], t: c.t, vel, fevering: stage.fevering });
+  else document.body.style.background = mix(BG[c.a], BG[c.b], c.t);
+  const now2 = c.t < 0.5 ? c.a : c.b;
+  document.body.classList.toggle('dark-zone', now2 === 'sports' || now2 === 'anatomy');
 
-  stage.update(dt, { ...c, scroll: y, velocity: vel });
+  const anatomyP = sectionProgress('anatomy', y);
+  stage.update(dt, { ...c, scroll: y, velocity: vel, anatomy: anatomyP });
+  updateBlueprint(anatomyP);
 
   // cursor
   ptr.rx += (ptr.x - ptr.rx) * 0.18;
@@ -351,11 +524,6 @@ function frame(now) {
     bubble.style.top = `${p.y - bubble.offsetHeight - 14}px`;
     if (bubbleT <= 0) anime({ targets: bubble, opacity: 0, scale: 0.6, duration: 250, easing: 'easeInQuad' });
   }
-
-  // shot meter
-  gameT += dt;
-  game.v = (Math.sin(gameT * 3.4) + 1) / 2;
-  needle.style.left = `${game.v * 100}%`;
 }
 
 addEventListener('resize', measure);

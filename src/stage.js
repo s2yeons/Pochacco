@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { toonGradient, makeMaterials, createPochacco } from './pochacco.js';
 import { createSparkles } from './sparkles.js';
+import { createHoops } from './hoops.js';
 import { makeBasketball, makeBanana, makeStar, makeBone, makeHeart, makeIceCream, makeHoop, blobTexture } from './props.js';
 
 const TAU = Math.PI * 2;
@@ -8,6 +9,7 @@ const G = 24;
 const damp = (a, b, l, dt) => a + (b - a) * (1 - Math.exp(-l * dt));
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -16,22 +18,24 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const DESKTOP = {
   hero:        { x: 0.0,   y: -0.13, s: 1.2,  ry: 0.0,  mode: 'idle' },
   profile:     { x: -0.25, y: -0.12, s: 1.05, ry: 0.4,  mode: 'idle' },
+  anatomy:     { x: 0.0,   y: -0.19, s: 1.0,  ry: 0.0,  mode: 'anatomy' },
   personality: { x: -0.05, y: -0.27, s: 0.72, ry: Math.PI / 2, mode: 'run' },
-  sports:      { x: -0.02, y: -0.3,  s: 0.82, ry: 0.55, mode: 'dribble' },
+  sports:      { x: -0.2,  y: -0.3,  s: 0.8,  ry: 0.55, mode: 'dribble' },
   icecream:    { x: 0.24,  y: -0.14, s: 1.0,  ry: -0.45, mode: 'happy' },
   outro:       { x: 0.31,  y: -0.24, s: 0.85, ry: -0.3, mode: 'party' },
 };
 const MOBILE = {
   hero:        { x: 0.0,  y: -0.1,  s: 0.78, ry: 0.0,  mode: 'idle' },
   profile:     { x: 0.22, y: -0.33, s: 0.5,  ry: -0.3, mode: 'idle' },
+  anatomy:     { x: 0.0,  y: -0.02, s: 0.5,  ry: 0.0,  mode: 'anatomy' },
   personality: { x: 0.0,  y: -0.3,  s: 0.55, ry: Math.PI / 2, mode: 'run' },
-  sports:      { x: -0.22, y: -0.1, s: 0.4,  ry: 0.5,  mode: 'dribble' },
+  sports:      { x: -0.24, y: -0.12, s: 0.4, ry: 0.5,  mode: 'dribble' },
   icecream:    { x: 0.18, y: -0.3,  s: 0.6,  ry: -0.4, mode: 'happy' },
   outro:       { x: 0.0,  y: -0.24, s: 0.62, ry: 0.0,  mode: 'party' },
 };
 
 const PHRASES = ['왈!', '놀자!', '멍멍!', '공 던져줘!', '바나나 아이스크림!', '킁킁…?', '한 번 더!', '헤헤', '같이 뛰자!'];
-const CONFETTI_COLORS = [0xe23b2e, 0xffd23f, 0x6cc6ff, 0xffffff, 0x1c1a1f, 0xff8fb1, 0x7fe0c2];
+const CONFETTI_COLORS = [0xc4303d, 0xffd23f, 0x6cc6ff, 0xffffff, 0x1c1a1f, 0xff8fb1, 0x7fe0c2];
 
 export function createStage(canvas, hooks = {}) {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -45,7 +49,8 @@ export function createStage(canvas, hooks = {}) {
   const CAM_Z = 10;
   camera.position.set(0, 0, CAM_Z);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x9fb2ff, 2.0));
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x9fb2ff, 2.0);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 2.6);
   sun.position.set(3, 6, 8);
   scene.add(sun);
@@ -68,7 +73,6 @@ export function createStage(canvas, hooks = {}) {
   shadow.rotation.x = -Math.PI / 2 + 0.25;
   rig.root.add(shadow);
 
-  // dribble ball lives in Pochacco's hop space until it's shot
   const ball = makeBasketball(mats, 0.2);
   ball.scale.setScalar(0.001);
   rig.hop.add(ball);
@@ -80,6 +84,28 @@ export function createStage(canvas, hooks = {}) {
   const bigCone = makeIceCream(mats, { scoops: 2 });
   bigCone.scale.setScalar(0.001);
   scene.add(bigCone);
+
+  // ── blueprint rig: dashed orbit rings + measuring line for the exploded view ──
+  const blueprint = new THREE.Group();
+  const dashMat = new THREE.LineDashedMaterial({ color: 0xfffaf0, dashSize: 0.08, gapSize: 0.06, transparent: true, opacity: 0.8 });
+  const circle = (r, seg = 96) => {
+    const pts = [];
+    for (let i = 0; i <= seg; i++) pts.push(new THREE.Vector3(Math.cos((i / seg) * TAU) * r, 0, Math.sin((i / seg) * TAU) * r));
+    const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), dashMat);
+    l.computeLineDistances();
+    return l;
+  };
+  const orbitA = circle(1.35);
+  const orbitB = circle(1.05);
+  orbitB.position.y = 1.7;
+  const measure = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(1.7, 0, 0), new THREE.Vector3(1.7, 3.4, 0)]),
+    dashMat
+  );
+  measure.computeLineDistances();
+  blueprint.add(orbitA, orbitB, measure);
+  blueprint.scale.setScalar(0.001);
+  rig.root.add(blueprint);
 
   // ── floating props (parallax field) ─────────────────────────
   const floaterFactories = [
@@ -117,7 +143,7 @@ export function createStage(canvas, hooks = {}) {
   }
 
   // ── confetti (instanced) ────────────────────────────────────
-  const CN = 420;
+  const CN = 480;
   const confetti = new THREE.InstancedMesh(
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
@@ -134,17 +160,22 @@ export function createStage(canvas, hooks = {}) {
   let cHead = 0;
   const dummy = new THREE.Object3D();
 
-  function burst(at, n = 80, power = 1) {
+  function burst(at, n = 80, power = 1, down = false) {
     for (let i = 0; i < n; i++) {
       const c = cParts[cHead];
       cHead = (cHead + 1) % CN;
       c.p.copy(at);
       const a = rand(0, TAU), up = rand(0.4, 1);
       const sp = rand(3, 8) * power;
-      c.v.set(Math.cos(a) * sp * (1 - up * 0.5), up * sp * 1.1, Math.sin(a) * sp * 0.6);
+      if (down) {
+        c.p.x += rand(-0.5, 0.5) * visW;
+        c.v.set(rand(-1, 1), rand(-2, 0), rand(-0.5, 0.5));
+      } else {
+        c.v.set(Math.cos(a) * sp * (1 - up * 0.5), up * sp * 1.1, Math.sin(a) * sp * 0.6);
+      }
       c.r.set(rand(0, TAU), rand(0, TAU), rand(0, TAU));
       c.rv.set(rand(-12, 12), rand(-12, 12), rand(-12, 12));
-      c.life = rand(1.6, 2.6);
+      c.life = rand(1.6, 2.6) * (down ? 1.8 : 1);
       c.w = rand(0.05, 0.1);
       c.h = rand(0.09, 0.16);
       c.sway = rand(0, TAU);
@@ -152,7 +183,7 @@ export function createStage(canvas, hooks = {}) {
   }
 
   // shockwave rings
-  const rings = Array.from({ length: 5 }, () => {
+  const rings = Array.from({ length: 6 }, () => {
     const m = new THREE.Mesh(
       new THREE.RingGeometry(0.9, 1, 64),
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
@@ -204,19 +235,22 @@ export function createStage(canvas, hooks = {}) {
   const appear = { x: 0, v: 0, on: false };
   const hoopVis = { x: 0, v: 0 };
   const coneVis = { x: 0, v: 0 };
-  const shot = { active: false, phase: '', t: 0, dur: 1, from: new THREE.Vector3(), to: new THREE.Vector3(), h: 1, vel: new THREE.Vector3(), made: false };
+  const explode = { x: 0, v: 0, p: 0 };
   const netSpring = { x: 1, v: 0 };
   const headPrev = new THREE.Vector3(), headVel = new THREE.Vector3(), headAcc = new THREE.Vector3();
   let auraT = 0;
   let blinkT = 2, blinking = 0, barkT = 0, happyFlash = 0, partyT = 0.6, rainT = 0, dustT = 0;
+  let feverT = 0, beatT = 0, beatN = 0;
   let mode = 'idle';
   let weights = {};
   let scrollPx = 0, time = 0;
   let hovering = false;
+  let ballVis = 0;
 
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
-  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3();
+  const hemiSky = new THREE.Color(0xffffff), hemiGround = new THREE.Color(0x9fb2ff);
 
   function resize() {
     W = innerWidth;
@@ -231,6 +265,55 @@ export function createStage(canvas, hooks = {}) {
   }
   resize();
   addEventListener('resize', resize);
+
+  function headWorld(out = new THREE.Vector3()) {
+    return rig.head.getWorldPosition(out);
+  }
+  function toScreen(v) {
+    tmp3.copy(v).project(camera);
+    return { x: (tmp3.x * 0.5 + 0.5) * W, y: (-tmp3.y * 0.5 + 0.5) * H };
+  }
+
+  function bark(text) {
+    barkT = 1.1;
+    const phrase = text || PHRASES[(Math.random() * PHRASES.length) | 0];
+    hooks.onBark?.(phrase);
+    hooks.sfx?.bark();
+  }
+
+  function jump({ spin: doSpin = false, power = 1 } = {}) {
+    if (J.air || J.pending > 0 || !appear.on) return false;
+    J.pending = 0.09;
+    J.power = power;
+    J.spin = doSpin;
+    sq.v -= 5;
+    return true;
+  }
+
+  // ── basketball game ─────────────────────────────────────────
+  const table = () => (mobile ? MOBILE : DESKTOP);
+  const hoops = createHoops({
+    scene, ball, hoop, rig, sparkles, hooks,
+    active: () => (weights.sports || 0) > 0.6 && appear.on,
+    view: () => ({ visW, visH, W, H, mobile, s: cur.s }),
+    baseX: () => table().sports.x * visW,
+    ballVis: () => ballVis,
+    toScreen,
+    jump,
+    burst,
+    shock,
+    netKick: () => { netSpring.v -= 9; },
+    cheer: (label) => {
+      happyFlash = 1.2;
+      hoops.setPose('cheer', 0.7);
+      if (Math.random() < 0.5) bark(['나이스!', '골인!', '헤헤', '멍!'][(Math.random() * 4) | 0]);
+    },
+    sad: () => {
+      hoops.setPose('sad', 0.8);
+      if (Math.random() < 0.4) bark(['으앙', '아깝다!', '다시!'][(Math.random() * 3) | 0]);
+    },
+    celebrate: () => party(),
+  });
 
   // ── pointer: look-at, click to jump, drag to spin ───────────
   function hitTest(clientX, clientY) {
@@ -254,7 +337,7 @@ export function createStage(canvas, hooks = {}) {
     }
   });
   addEventListener('pointerdown', (e) => {
-    if (e.target.closest('a, button, input, .no-stage')) return;
+    if (e.target.closest('a, button, input, .no-stage, .court-zone')) return;
     if (!hitTest(e.clientX, e.clientY)) return;
     spin.drag = true;
     spin.lastX = spin.downX = e.clientX;
@@ -266,21 +349,6 @@ export function createStage(canvas, hooks = {}) {
     if (spin.moved < 8) poke();
   });
 
-  function headWorld(out = new THREE.Vector3()) {
-    return rig.head.getWorldPosition(out);
-  }
-  function toScreen(v) {
-    tmp2.copy(v).project(camera);
-    return { x: (tmp2.x * 0.5 + 0.5) * W, y: (-tmp2.y * 0.5 + 0.5) * H };
-  }
-
-  function bark(text) {
-    barkT = 1.1;
-    const phrase = text || PHRASES[(Math.random() * PHRASES.length) | 0];
-    hooks.onBark?.(phrase);
-    hooks.sfx?.bark();
-  }
-
   function poke() {
     if (jump({ spin: Math.random() < 0.35 })) {
       happyFlash = 0.9;
@@ -291,35 +359,6 @@ export function createStage(canvas, hooks = {}) {
       sparkles.emit(h, { n: 60, speed: 4, spread: 0.3, up: 0.3, colors: SC.gold, life: 1.2, size: 0.45 });
       hooks.onPoke?.();
     }
-  }
-
-  function jump({ spin: doSpin = false, power = 1 } = {}) {
-    if (J.air || J.pending > 0 || !appear.on) return false;
-    J.pending = 0.09;
-    J.power = power;
-    J.spin = doSpin;
-    sq.v -= 5;
-    return true;
-  }
-
-  // ── public: shoot the ball at the hoop ───────────────────────
-  function shoot(made) {
-    if (shot.active || ballVis < 0.6 || hoopVis.x < 0.6) return false;
-    shot.active = true;
-    shot.phase = 'flight';
-    shot.t = 0;
-    shot.made = made;
-    ball.getWorldPosition(shot.from);
-    scene.attach(ball);
-    hoop.rim.getWorldPosition(shot.to);
-    if (made) shot.to.y += 0.06;
-    else shot.to.add(tmp.set(Math.random() < 0.5 ? -0.33 : 0.3, 0.12, 0.18));
-    const dist = shot.from.distanceTo(shot.to);
-    shot.h = 1.4 + dist * 0.18;
-    shot.dur = 0.8 + dist * 0.05;
-    jump({ power: 0.55 });
-    hooks.sfx?.pop();
-    return true;
   }
 
   function spawnRain(n = 1, fromY) {
@@ -355,8 +394,18 @@ export function createStage(canvas, hooks = {}) {
     const h = headWorld();
     burst(h, 160, 1.3);
     shock(h, 0xffd23f, 3);
+    shock(h.clone().add(tmp.set(0, 0.3, 0)), 0xc4303d, 2.2);
     sparkles.emit(h, { n: 180, speed: 7, spread: 0.3, up: 0.2, gravity: 2, colors: SC.party, life: 1.8, size: 0.55 });
-    shock(h.clone().add(tmp.set(0, 0.3, 0)), 0xe23b2e, 2.2);
+  }
+
+  function fever(seconds = 9) {
+    if (feverT > 0) return;
+    feverT = seconds;
+    beatT = 0;
+    beatN = 0;
+    happyFlash = seconds;
+    bark('FEVER!!');
+    party();
   }
 
   function intro() {
@@ -372,21 +421,31 @@ export function createStage(canvas, hooks = {}) {
     for (const f of floaters) f.pop = rand(0, 0.8);
   }
 
-  // ── choreography blend ──────────────────────────────────────
-  let ballVis = 0;
+  // ── the frame ───────────────────────────────────────────────
   function update(dt, choreo) {
     dt = Math.min(dt, 1 / 30);
     time += dt;
     scrollPx = choreo.scroll;
-    const table = mobile ? MOBILE : DESKTOP;
-    const A = table[choreo.a], B = table[choreo.b];
+    explode.p = choreo.anatomy ?? explode.p;
+    const T = table();
+    const A = T[choreo.a], B = T[choreo.b];
     const t = choreo.t;
     mode = t < 0.5 ? A.mode : B.mode;
     weights = { [choreo.a]: 1 - t };
     weights[choreo.b] = (weights[choreo.b] || 0) + t;
+    const fev = feverT > 0;
+    if (fev) {
+      feverT -= dt;
+      if (feverT <= 0) {
+        hemi.color.copy(hemiSky);
+        hemi.groundColor.copy(hemiGround);
+        hooks.onFeverEnd?.();
+      }
+    }
 
     const L = reduced ? 20 : 4.5;
-    cur.x = damp(cur.x, lerp(A.x, B.x, t), L, dt);
+    const sw = weights.sports || 0;
+    cur.x = damp(cur.x, lerp(A.x, B.x, t) + (hoops.shiftX / visW) * sw, L, dt);
     cur.y = damp(cur.y, lerp(A.y, B.y, t), L, dt);
     cur.s = damp(cur.s, lerp(A.s, B.s, t), L, dt);
     cur.ry = damp(cur.ry, lerp(A.ry, B.ry, t), L, dt);
@@ -405,7 +464,9 @@ export function createStage(canvas, hooks = {}) {
     spin.v *= Math.exp(-3 * dt);
     if (!spin.drag) spin.v += (Math.round(spin.a / TAU) * TAU - spin.a) * 10 * dt;
     spin.a += spin.v * dt * 0.05;
-    const lookY = mode === 'run' ? 0 : mouse.sx * 0.25;
+    if (fev) spin.a += dt * 5 * Math.sin(time * 1.3) ** 2;
+    let lookY = mode === 'run' ? 0 : mouse.sx * 0.25;
+    if (mode === 'anatomy') lookY = (explode.p - 0.5) * 1.6 + Math.sin(time * 0.6) * 0.12;
     rig.root.rotation.y = cur.ry + spin.a + lookY;
     rig.root.rotation.x = mode === 'run' ? 0 : -mouse.sy * 0.06;
 
@@ -451,13 +512,36 @@ export function createStage(canvas, hooks = {}) {
     };
     let happy = happyFlash > 0;
     let wantBall = 0;
+    let eTarget = 0;
 
-    if (mode === 'idle') {
+    if (fev) {
+      // dance: alternating arm pumps on the beat, head bops, hips wiggle
+      const b = Math.sin(time * TAU * (130 / 60) / 2);
+      happy = true;
+      P.armLz = -1.2 - b * 1.2;
+      P.armRz = 1.2 - b * 1.2;
+      P.armLx = Math.sin(time * 6) * 0.4;
+      P.headZ = b * 0.25;
+      P.headX = Math.abs(b) * -0.15;
+      P.bob = Math.abs(b) * 0.12;
+      P.legL = b * 0.4;
+      P.legR = -b * 0.4;
+      P.tail = Math.sin(time * 25);
+      P.sq = 1 + Math.abs(b) * 0.06;
+    } else if (mode === 'idle') {
       look();
       P.headZ = Math.sin(time * 1.3) * 0.07;
       P.armLx = Math.sin(time * 2) * 0.12;
       P.armRx = -Math.sin(time * 2) * 0.12;
       P.sq = 1 + Math.sin(time * 2.6) * 0.022;
+    } else if (mode === 'anatomy') {
+      // stand still and let the parts fly
+      const p = explode.p;
+      eTarget = smooth(0.06, 0.3, p) * (1 - smooth(0.8, 0.95, p));
+      P.armLz = -0.9;
+      P.armRz = 0.9;
+      P.headX = -0.05;
+      P.sq = 1 + Math.sin(time * 2) * 0.01;
     } else if (mode === 'run') {
       const w = 13;
       const s = Math.sin(time * w);
@@ -483,22 +567,41 @@ export function createStage(canvas, hooks = {}) {
       }
     } else if (mode === 'dribble') {
       wantBall = 1;
-      look();
-      const T = 0.56;
-      const p = (time % T) / T;
-      const u = Math.abs(2 * p - 1);
-      if (!shot.active) {
-        ball.position.set(0.6, 0.2 + 0.64 * (1 - (1 - u) * (1 - u)), 0.42);
-        ball.rotation.x += dt * 4;
+      const hp = hoops.pose;
+      if (hp === 'dribble') {
+        look();
+        const u = hoops.dribbleU;
+        P.armRx = -(0.85 + 0.5 * u);
+        P.armRz = 0.22;
+        P.armLx = -0.2;
+        P.sq = 1 - 0.035 * (1 - u);
+        P.headX = 0.18 + 0.08 * (1 - u);
+        P.legL = 0.1;
+        P.legR = -0.1;
+      } else if (hp === 'aim' || hp === 'shoot') {
+        P.armLx = -2.85;
+        P.armRx = -2.85;
+        P.armLz = -0.3;
+        P.armRz = 0.3;
+        P.headX = -0.28;
+        P.headY = 0.35;
+        P.sq = hp === 'aim' ? 0.93 : 1.05;
+        P.legL = hp === 'aim' ? 0.25 : -0.2;
+        P.legR = hp === 'aim' ? -0.25 : 0.2;
+      } else if (hp === 'cheer') {
+        happy = true;
+        P.armLz = -2.6;
+        P.armRz = 2.6;
+        P.headZ = Math.sin(time * 12) * 0.15;
+        P.tail = Math.sin(time * 25);
+      } else if (hp === 'sad') {
+        P.headX = 0.4;
+        P.headZ = 0.12;
+        P.armLz = -0.25;
+        P.armRz = 0.25;
+        P.sq = 0.95;
+        P.tail = 0;
       }
-      P.armRx = shot.active ? -2.7 : -(0.85 + 0.5 * u);
-      P.armRz = shot.active ? 0.2 : 0.22;
-      P.armLx = shot.active ? -2.7 : -0.2;
-      P.armLz = shot.active ? -0.2 : -0.5;
-      P.sq = 1 - 0.035 * (1 - u);
-      P.headX = shot.active ? -0.3 : 0.18 + 0.08 * (1 - u);
-      P.legL = 0.1;
-      P.legR = -0.1;
     } else if (mode === 'happy') {
       happy = true;
       look();
@@ -527,8 +630,7 @@ export function createStage(canvas, hooks = {}) {
         jump({ spin: Math.random() < 0.5, power: rand(0.7, 1) });
       }
     }
-    if (J.air && mode !== 'dribble') {
-      // arms up while airborne — pure joy
+    if (J.air && mode !== 'dribble' && !fev) {
       P.armLz = Math.min(P.armLz, -2.2);
       P.armRz = Math.max(P.armRz, 2.2);
       P.legL = -0.4;
@@ -547,6 +649,19 @@ export function createStage(canvas, hooks = {}) {
     rig.squash.rotation.x = pose.lean;
     rig.tail.rotation.z = pose.tail;
 
+    // ── exploded view ──
+    explode.v += ((eTarget - explode.x) * 90 - explode.v * 9) * dt;
+    explode.x += explode.v * dt;
+    const ex = Math.max(0, explode.x);
+    for (const key in rig.parts) {
+      const pt = rig.parts[key];
+      pt.obj.position.copy(pt.base).addScaledVector(pt.dir, explode.x);
+    }
+    blueprint.scale.setScalar(Math.max(0.001, Math.min(1.2, ex * 1.1)));
+    orbitA.rotation.y = time * 0.4;
+    orbitB.rotation.y = -time * 0.6;
+    dashMat.opacity = Math.min(1, ex) * 0.8;
+
     // squash & stretch spring
     sq.v += ((P.sq - sq.x) * 280 - sq.v * 13) * dt;
     sq.x = clamp(sq.x + sq.v * dt, 0.62, 1.45);
@@ -557,8 +672,6 @@ export function createStage(canvas, hooks = {}) {
     const hs = 1 / (1 + J.y * 0.5);
     shadow.scale.set(hs, hs, hs);
     shadow.material.opacity = 0.22 * hs;
-    shadow.position.y = -J.y * 0 + 0.005;
-    shadow.position.x = 0;
 
     // ── ear physics (driven by head acceleration) ──
     headWorld(tmp);
@@ -570,15 +683,13 @@ export function createStage(canvas, hooks = {}) {
     headVel.copy(tmp2);
     headPrev.copy(tmp);
     const spinSpeed = Math.abs(spin.v * 0.05) + (J.air && J.spin ? 8 : 0);
+    const droop = mode === 'dribble' && hoops.pose === 'sad' ? -0.5 : 0;
     for (const ear of rig.ears) {
-      const f = -headAcc.y * 0.05 - ear.s * headAcc.x * 0.035 + spinSpeed * 0.08;
+      const f = -headAcc.y * 0.05 - ear.s * headAcc.x * 0.035 + spinSpeed * 0.08 + droop * 60 * (ear.s > 0 ? 1 : 0);
       ear.vel += (f - 90 * ear.angle - 7 * ear.vel) * dt;
       ear.angle = clamp(ear.angle + ear.vel * dt, -0.7, 1.2);
-      // positive angle = ear lifts (flopped ear rises, perked ear tips outward)
       ear.pivot.rotation.z = ear.base + ear.angle * (ear.s < 0 ? 0.7 : 1) + Math.sin(time * 3 + ear.s) * 0.03;
     }
-
-    // tufts wobble
     rig.tufts.rotation.z = Math.sin(time * 5) * 0.06 + clamp(-headAcc.x * 0.004, -0.3, 0.3);
 
     // ── eyes: blink / happy ──
@@ -599,65 +710,18 @@ export function createStage(canvas, hooks = {}) {
     const mo = barkT > 0.3 ? 1 : 0.001;
     rig.mouthOpen.scale.setScalar(damp(rig.mouthOpen.scale.x, mo, 25, dt));
 
-    // ── ball visibility ──
+    // ── hoop + ball ──
     ballVis = damp(ballVis, wantBall, 8, dt);
-    if (!shot.active) ball.scale.setScalar(Math.max(0.001, ballVis));
-
-    // ── hoop placement ──
     const hw = weights.sports || 0;
     hoopVis.v += ((hw > 0.5 ? 1 : 0) - hoopVis.x) * 120 * dt - hoopVis.v * 10 * dt;
     hoopVis.x += hoopVis.v * dt;
-    hoop.group.position.set((mobile ? 0.22 : 0.29) * visW, (mobile ? 0.0 : 0.06) * visH - (1 - hw) * 2, -0.6);
-    hoop.group.scale.setScalar(Math.max(0.001, hoopVis.x * (mobile ? 0.55 : 1)));
-    hoop.group.rotation.y = -0.35 + Math.sin(time * 0.8) * 0.04;
+    hoop.group.position.set((mobile ? 0.25 : 0.3) * visW + hoops.hoopDX, (mobile ? 0.0 : 0.04) * visH - (1 - hw) * 2, -0.6);
+    hoop.group.scale.setScalar(Math.max(0.001, hoopVis.x * (mobile ? 0.62 : 1)));
+    hoop.group.rotation.y = -1.12;
     netSpring.v += (1 - netSpring.x) * 220 * dt - netSpring.v * 8 * dt;
     netSpring.x += netSpring.v * dt;
     hoop.net.scale.set(2 - netSpring.x, netSpring.x, 2 - netSpring.x);
-
-    // ── shot flight ──
-    if (shot.active) {
-      shot.t += dt;
-      if (shot.phase === 'flight') {
-        hoop.rim.getWorldPosition(tmp);
-        if (shot.made) shot.to.copy(tmp).add(tmp2.set(0, 0.06, 0));
-        const u = Math.min(1, shot.t / shot.dur);
-        ball.position.lerpVectors(shot.from, shot.to, u);
-        ball.position.y += shot.h * 4 * u * (1 - u);
-        ball.rotation.x -= 12 * dt;
-        if (u >= 1) {
-          shot.phase = 'after';
-          shot.t = 0;
-          if (shot.made) {
-            shot.vel.set(0, -1.2, 0);
-            netSpring.v -= 9;
-            burst(tmp, 110, 1.1);
-            shock(tmp, 0xffd23f, 1.8);
-            sparkles.emit(tmp, { n: 140, speed: 5, spread: 0.3, up: 0.5, colors: SC.gold, life: 1.5, size: 0.5 });
-            hooks.sfx?.swish();
-            happyFlash = 1.4;
-            bark(['슛~골인!', '나이스!', '스윗!'][(Math.random() * 3) | 0]);
-          } else {
-            shot.vel.set(rand(-1, 1) > 0 ? 2.2 : -2.2, 3.2, 1.8);
-            netSpring.v -= 3;
-            hooks.sfx?.clank();
-            bark(['아깝다!', '한 번 더!', '으앙'][(Math.random() * 3) | 0]);
-          }
-          hooks.onShot?.(shot.made);
-        }
-      } else {
-        shot.vel.y -= (shot.made ? 10 : 14) * dt;
-        ball.position.addScaledVector(shot.vel, dt);
-        ball.rotation.z -= 6 * dt;
-        if (shot.t > 0.9) ball.scale.multiplyScalar(Math.pow(0.02, dt * 3));
-        if (shot.t > 1.3) {
-          shot.active = false;
-          rig.hop.add(ball);
-          ball.rotation.set(0, 0, 0);
-          ballVis = 0;
-          ball.scale.setScalar(0.001);
-        }
-      }
-    }
+    hoops.update(dt, time);
 
     // ── big ice cream cone ──
     const iw = weights.icecream || 0;
@@ -671,6 +735,27 @@ export function createStage(canvas, hooks = {}) {
     bigCone.scale.setScalar(Math.max(0.001, coneVis.x * cur.s * 0.95));
     bigCone.rotation.set(Math.sin(time * 1.3) * 0.12, time * 0.9, Math.sin(time * 1.7) * 0.2);
 
+    // ── fever: disco lights, beat pulses, glitter storm ──
+    if (fev) {
+      hemi.color.setHSL((time * 0.35) % 1, 0.9, 0.7);
+      hemi.groundColor.setHSL((time * 0.35 + 0.5) % 1, 0.9, 0.55);
+      beatT -= dt;
+      if (beatT <= 0) {
+        beatT = 60 / 130;
+        beatN++;
+        hooks.onBeat?.(beatN);
+        hooks.sfx?.kick();
+        const h = headWorld(tmp);
+        shock(h, [0xffd23f, 0xff8fb1, 0x6cc6ff, 0xc4303d][beatN % 4], 2.8);
+        if (beatN % 2 === 0) jump({ spin: beatN % 4 === 0, power: 0.7 });
+        burst(tmp2.set(0, visH * 0.6, 0), 24, 1, true);
+      }
+      for (let i = 0; i < 4; i++) {
+        tmp.set(rand(-0.5, 0.5) * visW, rand(-0.5, 0.5) * visH, rand(-2, 1));
+        sparkles.emit(tmp, { n: 1, speed: 0.6, spread: 0.1, up: 0.3, gravity: 0, life: 0.8, size: 0.6, colors: SC.party });
+      }
+    }
+
     // ── floaters: scroll parallax + mouse parallax + bob ──
     const pxToWorld = visH / H;
     for (const f of floaters) {
@@ -679,14 +764,15 @@ export function createStage(canvas, hooks = {}) {
       let y = f.y0 * range * 0.5 + scrollPx * pxToWorld * f.speed * 0.55;
       y = (((y + range / 2) % range) + range) % range - range / 2;
       const w = visW * depth;
+      const boost = fev ? 4 : 1;
       f.obj.position.set(
         f.xf * w * (mobile ? 1.1 : 1) + mouse.sx * (f.z + 7) * 0.05,
-        y + Math.sin(time * 0.9 + f.phase) * 0.15 + mouse.sy * (f.z + 7) * 0.03,
+        y + Math.sin(time * 0.9 * boost + f.phase) * 0.15 * boost + mouse.sy * (f.z + 7) * 0.03,
         f.z
       );
-      f.obj.rotation.x += f.spin.x * dt;
-      f.obj.rotation.y += f.spin.y * dt;
-      f.obj.rotation.z += f.spin.z * dt;
+      f.obj.rotation.x += f.spin.x * dt * boost;
+      f.obj.rotation.y += f.spin.y * dt * boost;
+      f.obj.rotation.z += f.spin.z * dt * boost;
       if (f.pop !== undefined) {
         f.pop -= dt;
         const target = f.pop < 0 ? f.scale * (mobile ? 0.7 : 1) : 0.001;
@@ -756,7 +842,7 @@ export function createStage(canvas, hooks = {}) {
       if (d.t >= 1) m.visible = false;
     }
 
-    // ── sparkles: aura while happy, ball comet tail, cursor trail ──
+    // ── sparkles: aura while happy, cursor trail ──
     auraT -= dt;
     if (auraT <= 0 && appear.on) {
       auraT = 0.07;
@@ -768,9 +854,12 @@ export function createStage(canvas, hooks = {}) {
         bigCone.getWorldPosition(tmp).add(tmp2.set(rand(-0.6, 0.6), rand(-0.6, 1.2), rand(0, 0.6)).multiplyScalar(cur.s));
         sparkles.emit(tmp, { n: 1, speed: 0.3, spread: 0.05, up: 0.3, gravity: -0.1, life: 1.2, size: 0.45, colors: SC.gold });
       }
-    }
-    if (shot.active && shot.phase === 'flight') {
-      sparkles.emit(ball.position, { n: 2, speed: 0.5, spread: 0.12, up: 0, gravity: 0.5, life: 0.6, size: 0.35, colors: SC.gold });
+      if (ex > 0.3) {
+        // blueprint glints drifting off the separated parts
+        const keys = Object.keys(rig.parts);
+        rig.parts[keys[(Math.random() * keys.length) | 0]].obj.getWorldPosition(tmp);
+        sparkles.emit(tmp, { n: 1, speed: 0.3, spread: 0.2, up: 0.2, gravity: -0.1, life: 1, size: 0.35, colors: SC.cool });
+      }
     }
     if (mouse.px >= 0 && !reduced) {
       const md = Math.hypot(mouse.px - mouse.lx, mouse.py - mouse.ly);
@@ -781,7 +870,7 @@ export function createStage(canvas, hooks = {}) {
         mouse.trail = 0;
         ndc.set((mouse.px / W) * 2 - 1, -(mouse.py / H) * 2 + 1);
         tmp.set(ndc.x, ndc.y, 0.5).unproject(camera).sub(camera.position).normalize();
-        tmp.multiplyScalar(4 / -tmp.z * 1).add(camera.position); // point on plane z = 6
+        tmp.multiplyScalar(4 / -tmp.z).add(camera.position); // point on plane z = 6
         sparkles.emit(tmp, { n: 1, speed: 0.25, spread: 0.02, up: -0.2, gravity: 0.6, life: 0.7, size: 0.14 });
       }
     }
@@ -800,10 +889,28 @@ export function createStage(canvas, hooks = {}) {
     renderer.render(scene, camera);
   }
 
+  // Screen positions of blueprint callout anchors.
+  const ANCHORS = {
+    earL: () => rig.ears[0].pivot.localToWorld(tmp.set(0, 0.62, 0)),
+    earR: () => rig.ears[1].pivot.localToWorld(tmp.set(0, 0.62, 0)),
+    tufts: () => rig.tufts.localToWorld(tmp.set(-0.1, 0.05, 0)),
+    eye: () => rig.eyesOpen[1].getWorldPosition(tmp),
+    nose: () => rig.nose.getWorldPosition(tmp),
+    shirt: () => rig.parts.shirt.obj.localToWorld(tmp.set(0.5, 0.3, 0.6)),
+    tail: () => rig.tail.localToWorld(tmp.set(0, 0.22, 0)),
+    leg: () => rig.legs[0].localToWorld(tmp.set(0, -0.2, 0.1)),
+  };
+
   return {
-    update, intro, jump, shoot, treat, party, poke,
+    update, intro, jump, treat, party, poke, fever, hoops,
     get weights() { return weights; },
-    get busy() { return shot.active; },
+    get explode() { return Math.max(0, explode.x); },
+    get fevering() { return feverT > 0; },
+    anchors() {
+      const out = {};
+      for (const k in ANCHORS) out[k] = toScreen(ANCHORS[k]());
+      return out;
+    },
     headScreen() { return toScreen(headWorld(tmp).add(tmp2.set(0, 0.9 * cur.s, 0))); },
   };
 }

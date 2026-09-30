@@ -41,7 +41,7 @@
   <header class="nav">
     <a class="nav-logo" href="#top" data-magnetic>POCHACCO<sup>®</sup></a>
     <nav class="nav-links">
-      <a href="#profile">프로필</a><a href="#personality">성격</a><a href="#sports">스포츠</a><a href="#icecream">최애 간식</a>
+      <a href="#profile">프로필</a><a href="#anatomy">설계도</a><a href="#personality">성격</a><a href="#sports">스포츠</a><a href="#icecream">최애 간식</a>
     </nav>
     <button class="sound-btn" id="sound" data-magnetic aria-pressed="false">
       <span class="eq"><i></i><i></i><i></i><i></i></span> SOUND <b>OFF</b>
@@ -49,8 +49,11 @@
     <div class="nav-progress"><i id="progress"></i></div>
   </header>
 
+  <canvas id="liquid" aria-hidden="true"></canvas>
   <canvas id="stage" aria-label="3D 포차코. 클릭하면 점프하고, 드래그하면 빙글 돌아요."></canvas>
   <div id="bubble" class="bubble" aria-live="polite"></div>
+  <div id="fever-text" class="fever-text" aria-hidden="true"><span>F</span><span>E</span><span>V</span><span>E</span><span>R</span><span>!</span></div>
+  <div id="pops" aria-live="polite"></div>
 
   <main>
     <!-- HERO -->
@@ -130,13 +133,38 @@
       </div>
     </section>
 
+    <!-- ANATOMY (pinned exploded view) -->
+    <section id="anatomy" class="anatomy" data-scene="anatomy">
+      <div class="pin">
+        <div class="bp-grid" aria-hidden="true"></div>
+        <div class="bp-head">
+          <span class="sec-num">02 — BLUEPRINT</span>
+          <h2 class="split">포차코<br>설계도</h2>
+          <p class="reveal">스크롤하면 분해됐다가, 다시 딱! 조립돼요.</p>
+        </div>
+        <div class="bp-stamp" aria-hidden="true"><b>POCHACCO</b><span>MODEL 1989 · REV. 2026</span><span>SCALE 1:1 · CUTE</span></div>
+        <svg class="bp-lines" aria-hidden="true"></svg>
+        <div class="bp-labels">
+          <div class="bp-label" data-anchor="earL" data-side="l"><i>A</i><b>쫑긋 귀</b><span>한쪽은 늘 하늘을 향해요</span></div>
+          <div class="bp-label" data-anchor="tufts" data-side="l"><i>B</i><b>머리털 세 가닥</b><span>왼쪽 둘, 오른쪽 하나</span></div>
+          <div class="bp-label" data-anchor="eye" data-side="l"><i>C</i><b>동그란 눈</b><span>낮고 넓게, 콕콕</span></div>
+          <div class="bp-label" data-anchor="shirt" data-side="l"><i>D</i><b>빨간 티셔츠</b><span>트레이드마크!</span></div>
+          <div class="bp-label" data-anchor="earR" data-side="r"><i>E</i><b>펄럭 귀</b><span>옆으로 휘날리는 반대쪽 귀</span></div>
+          <div class="bp-label" data-anchor="nose" data-side="r"><i>F</i><b>콩 코</b><span>킁킁 호기심 센서</span></div>
+          <div class="bp-label" data-anchor="tail" data-side="r"><i>G</i><b>검은 꼬리 끝</b><span>기분 좋으면 붕붕</span></div>
+          <div class="bp-label" data-anchor="leg" data-side="r"><i>H</i><b>짧은 다리</b><span>그래도 달리기는 1등</span></div>
+        </div>
+        <div class="bp-meter" aria-hidden="true"><span>EXPLODE</span><i><b id="bp-bar"></b></i><em id="bp-pct">0%</em></div>
+      </div>
+    </section>
+
     <!-- PERSONALITY (pinned horizontal run) -->
     <section id="personality" class="personality" data-scene="personality">
       <div class="pin">
         <div class="run-ground" aria-hidden="true"><i></i></div>
         <div class="track">
           <div class="panel panel-intro">
-            <span class="sec-num">02 — PERSONALITY</span>
+            <span class="sec-num">03 — PERSONALITY</span>
             <h2 class="split">포차코는<br>어떤 강아지?</h2>
             <p class="reveal">스크롤하면 포차코가 달려요 →</p>
           </div>
@@ -177,21 +205,29 @@
         <path d="M0 60 C 560 60 560 840 0 840"/><path d="M1600 60 C 1040 60 1040 840 1600 840"/>
         <rect x="20" y="20" width="1560" height="860" rx="10"/>
       </svg>
+      <div class="court-zone" id="court" aria-label="코트: 드래그해서 슛"></div>
       <div class="sports-inner">
         <div class="sec-head">
-          <span class="sec-num">03 — SPORTS</span>
-          <h2 class="split">농구 한 판<br>할래?</h2>
-          <p class="reveal">운동이라면 뭐든 좋아하는 포차코. 특히 농구랑 축구는 진심이에요. 게이지가 <b class="hl">노란 구간</b>에 들어왔을 때 슛!</p>
+          <span class="sec-num">04 — SPORTS</span>
+          <h2 class="split">30초<br>슛 챌린지</h2>
+          <p class="reveal">코트 아무 데나 누르고 <b class="hl">뒤로 당겼다 놓으면</b> 슛! 림에 안 닿고 들어가면 +3, 3연속 성공하면 🔥 점수 2배.</p>
         </div>
-        <div class="game no-stage reveal">
-          <div class="scoreboard">
-            <div><small>SCORE</small><b id="score">0</b></div>
-            <div><small>STREAK</small><b id="streak">0</b></div>
-            <div><small>BEST</small><b id="best">0</b></div>
-          </div>
-          <div class="meter"><div class="meter-zone"></div><div class="meter-needle" id="needle"></div></div>
-          <button class="shoot-btn" id="shoot" data-magnetic><span>SHOOT!</span></button>
-          <p class="game-tip">스페이스바로도 쏠 수 있어요</p>
+      </div>
+      <div class="game no-stage reveal" id="game">
+        <div class="scoreboard">
+          <div><small>SCORE</small><b id="score">0</b></div>
+          <div class="sb-time"><small>TIME</small><b id="time">30</b></div>
+          <div><small>BEST</small><b id="best">0</b></div>
+        </div>
+        <div class="timebar"><i id="timebar"></i></div>
+        <div class="streak" id="streak" aria-live="polite"><span></span><span></span><span></span><em>COMBO</em></div>
+        <button class="shoot-btn" id="play" data-magnetic><span>▶ PLAY</span></button>
+        <p class="game-tip" id="game-tip">연습은 자유! PLAY를 누르면 30초 라운드 시작</p>
+        <div class="result" id="result" hidden>
+          <small>TIME UP!</small>
+          <strong id="rank">새싹 루키</strong>
+          <div class="result-row"><span>점수 <b id="r-score">0</b></span><span>성공 <b id="r-makes">0</b>/<b id="r-shots">0</b></span></div>
+          <em id="r-best" hidden>NEW RECORD!</em>
         </div>
       </div>
       <div class="shot-text" id="shot-text" aria-live="polite"></div>
@@ -201,7 +237,7 @@
     <section id="icecream" class="icecream" data-scene="icecream">
       <div class="drips" aria-hidden="true"></div>
       <div class="ice-inner">
-        <span class="sec-num">04 — FAVORITE</span>
+        <span class="sec-num">05 — FAVORITE</span>
         <h2 class="split big-split">BANANA<br>ICE CREAM</h2>
         <p class="ice-ko reveal">바나나 아이스크림 한 입이면<br>기분이 하늘까지 날아가요.</p>
         <button class="pill-btn reveal" id="treat" data-magnetic>🍦 하나 더 주기</button>
@@ -214,6 +250,7 @@
       <h2 class="outro-title split">LET'S<br>PLAY!</h2>
       <p class="reveal">오늘도 뛰어놀 준비 완료. 포차코랑 같이 놀자!</p>
       <button class="party-btn reveal" id="party" data-magnetic><span>포차코랑 놀기</span></button>
+      <p class="secret reveal">🤫 비밀: 키보드로 <kbd>pochacco</kbd>를 쳐보거나, 포차코를 빠르게 7번 눌러보세요</p>
     </section>
   </main>
 

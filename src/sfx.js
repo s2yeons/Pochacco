@@ -47,5 +47,19 @@ export function createSfx() {
       tone({ type: 'triangle', f0: 1400, f1: 900, dur: 0.12, vol: 0.05 });
     },
     tick() { tone({ type: 'triangle', f0: 1200, dur: 0.04, vol: 0.05 }); },
+    go() {
+      tone({ type: 'square', f0: 880, dur: 0.35, vol: 0.08 });
+      tone({ type: 'square', f0: 1320, dur: 0.35, vol: 0.05, delay: 0.02 });
+    },
+    thud() { tone({ f0: 160, f1: 60, dur: 0.16, vol: 0.25 }); },
+    bounce() { tone({ f0: 120, f1: 50, dur: 0.12, vol: 0.2 }); },
+    buzzer() {
+      tone({ type: 'sawtooth', f0: 110, dur: 0.9, vol: 0.12 });
+      tone({ type: 'square', f0: 116, dur: 0.9, vol: 0.06 });
+    },
+    kick() {
+      tone({ f0: 150, f1: 40, dur: 0.22, vol: 0.35 });
+      tone({ type: 'triangle', f0: [523, 659, 784, 659][(Math.random() * 4) | 0], dur: 0.12, vol: 0.05, delay: 0.23 });
+    },
   };
 }
