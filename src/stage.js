@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { toonGradient, makeMaterials, createPochacco } from './pochacco.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { makeMaterials, createPochacco } from './pochacco.js';
 import { createSparkles } from './sparkles.js';
 import { createHoops } from './hoops.js';
 import { makeBasketball, makeBanana, makeStar, makeBone, makeHeart, makeIceCream, makeHoop, blobTexture } from './props.js';
@@ -16,22 +17,22 @@ const rand = (a, b) => a + Math.random() * (b - a);
 // Where Pochacco stands and what he's doing in each section.
 // x/y are fractions of the visible frustum at z=0, so the layout survives any aspect ratio.
 const DESKTOP = {
-  hero:        { x: 0.0,   y: -0.13, s: 1.2,  ry: 0.0,  mode: 'idle' },
-  profile:     { x: -0.25, y: -0.12, s: 1.05, ry: 0.4,  mode: 'idle' },
-  anatomy:     { x: 0.0,   y: -0.19, s: 1.0,  ry: 0.0,  mode: 'anatomy' },
-  personality: { x: -0.05, y: -0.27, s: 0.72, ry: Math.PI / 2, mode: 'run' },
-  sports:      { x: -0.2,  y: -0.3,  s: 0.8,  ry: 0.55, mode: 'dribble' },
-  icecream:    { x: 0.24,  y: -0.14, s: 1.0,  ry: -0.45, mode: 'happy' },
-  outro:       { x: 0.31,  y: -0.24, s: 0.85, ry: -0.3, mode: 'party' },
+  hero:        { x: 0.0,   y: -0.16, s: 0.98, ry: 0.0,  mode: 'idle' },
+  profile:     { x: -0.25, y: -0.16, s: 0.9,  ry: 0.4,  mode: 'idle' },
+  anatomy:     { x: 0.0,   y: -0.24, s: 0.8,  ry: 0.0,  mode: 'anatomy' },
+  personality: { x: -0.05, y: -0.27, s: 0.62, ry: Math.PI / 2, mode: 'run' },
+  sports:      { x: -0.2,  y: -0.3,  s: 0.72, ry: 0.55, mode: 'dribble' },
+  icecream:    { x: 0.24,  y: -0.17, s: 0.86, ry: -0.45, mode: 'happy' },
+  outro:       { x: 0.31,  y: -0.26, s: 0.74, ry: -0.3, mode: 'party' },
 };
 const MOBILE = {
-  hero:        { x: 0.0,  y: -0.1,  s: 0.78, ry: 0.0,  mode: 'idle' },
-  profile:     { x: 0.22, y: -0.33, s: 0.5,  ry: -0.3, mode: 'idle' },
-  anatomy:     { x: 0.0,  y: -0.02, s: 0.5,  ry: 0.0,  mode: 'anatomy' },
-  personality: { x: 0.0,  y: -0.3,  s: 0.55, ry: Math.PI / 2, mode: 'run' },
-  sports:      { x: -0.24, y: -0.12, s: 0.4, ry: 0.5,  mode: 'dribble' },
-  icecream:    { x: 0.18, y: -0.3,  s: 0.6,  ry: -0.4, mode: 'happy' },
-  outro:       { x: 0.0,  y: -0.24, s: 0.62, ry: 0.0,  mode: 'party' },
+  hero:        { x: 0.0,  y: -0.12, s: 0.66, ry: 0.0,  mode: 'idle' },
+  profile:     { x: 0.22, y: -0.33, s: 0.44, ry: -0.3, mode: 'idle' },
+  anatomy:     { x: 0.0,  y: -0.05, s: 0.44, ry: 0.0,  mode: 'anatomy' },
+  personality: { x: 0.0,  y: -0.3,  s: 0.48, ry: Math.PI / 2, mode: 'run' },
+  sports:      { x: -0.24, y: -0.12, s: 0.36, ry: 0.5,  mode: 'dribble' },
+  icecream:    { x: 0.18, y: -0.3,  s: 0.52, ry: -0.4, mode: 'happy' },
+  outro:       { x: 0.0,  y: -0.26, s: 0.54, ry: 0.0,  mode: 'party' },
 };
 
 const PHRASES = ['왈!', '놀자!', '멍멍!', '공 던져줘!', '바나나 아이스크림!', '킁킁…?', '한 번 더!', '헤헤', '같이 뛰자!'];
@@ -43,22 +44,33 @@ export function createStage(canvas, hooks = {}) {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
   const CAM_Z = 10;
   camera.position.set(0, 0, CAM_Z);
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x9fb2ff, 2.0);
+  // studio lighting: soft env reflections (glossy ears/eyes), key light with soft self-shadow, cool rim
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.9;
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xc8d4ff, 0.8);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffffff, 2.6);
-  sun.position.set(3, 6, 8);
-  scene.add(sun);
-  const back = new THREE.DirectionalLight(0xfff0c0, 1.2);
-  back.position.set(-6, 3, -4);
+  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.bias = -0.0005;
+  sun.shadow.normalBias = 0.02;
+  sun.shadow.radius = 4;
+  scene.add(sun, sun.target);
+  const SUN_OFFSET = new THREE.Vector3(-3, 6, 6);
+  const back = new THREE.DirectionalLight(0xdfe8ff, 1.2);
+  back.position.set(4, 3, -5);
   scene.add(back);
 
-  const mats = makeMaterials(toonGradient());
+  const mats = makeMaterials();
   const sparkles = createSparkles(scene, renderer);
   const SC = sparkles.colors;
   const rig = createPochacco(mats);
@@ -250,7 +262,7 @@ export function createStage(canvas, hooks = {}) {
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3();
-  const hemiSky = new THREE.Color(0xffffff), hemiGround = new THREE.Color(0x9fb2ff);
+  const hemiSky = new THREE.Color(0xffffff), hemiGround = new THREE.Color(0xc8d4ff);
 
   function resize() {
     W = innerWidth;
@@ -459,6 +471,15 @@ export function createStage(canvas, hooks = {}) {
 
     rig.root.position.set(cur.x * visW, cur.y * visH, 0);
     rig.root.scale.setScalar(Math.max(0.001, cur.s * appear.x));
+    // the key light (and its shadow frustum) follows Pochacco around the page
+    const ss = Math.max(cur.s, 0.3);
+    sun.target.position.copy(rig.root.position);
+    sun.position.copy(rig.root.position).addScaledVector(SUN_OFFSET, ss);
+    const sc = sun.shadow.camera;
+    if (Math.abs(sc.right - 2.6 * ss) > 0.01) {
+      Object.assign(sc, { left: -2.6 * ss, right: 2.6 * ss, top: 4 * ss, bottom: -1.5 * ss, near: 0.1, far: 30 * ss });
+      sc.updateProjectionMatrix();
+    }
 
     // drag-spin with inertia, springs back to the nearest full turn
     spin.v *= Math.exp(-3 * dt);
@@ -896,7 +917,7 @@ export function createStage(canvas, hooks = {}) {
     tufts: () => rig.tufts.localToWorld(tmp.set(-0.1, 0.05, 0)),
     eye: () => rig.eyesOpen[1].getWorldPosition(tmp),
     nose: () => rig.nose.getWorldPosition(tmp),
-    shirt: () => rig.parts.shirt.obj.localToWorld(tmp.set(0.5, 0.3, 0.6)),
+    shirt: () => rig.parts.shirt.obj.localToWorld(tmp.set(0.3, 0.75, 0.42)),
     tail: () => rig.tail.localToWorld(tmp.set(0, 0.22, 0)),
     leg: () => rig.legs[0].localToWorld(tmp.set(0, -0.2, 0.1)),
   };
