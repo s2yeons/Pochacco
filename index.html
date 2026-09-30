@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POCHACCO · 포차코</title>
+  <meta name="description" content="호기심 많은 스포츠 강아지, 포차코를 소개하는 인터랙티브 3D 팬 페이지.">
+  <meta name="theme-color" content="#8fd0ff">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐶</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Jua&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.18/dist/lenis.min.js"></script>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="paw" viewBox="0 0 100 100">
+      <ellipse cx="50" cy="66" rx="22" ry="18"/><ellipse cx="22" cy="42" rx="9" ry="12" transform="rotate(-20 22 42)"/>
+      <ellipse cx="40" cy="25" rx="9" ry="12"/><ellipse cx="60" cy="25" rx="9" ry="12"/>
+      <ellipse cx="78" cy="42" rx="9" ry="12" transform="rotate(20 78 42)"/>
+    </symbol>
+  </svg>
+
+  <!-- loader -->
+  <div id="loader" aria-hidden="true">
+    <div class="loader-paws">
+      <svg><use href="#paw"/></svg><svg><use href="#paw"/></svg><svg><use href="#paw"/></svg><svg><use href="#paw"/></svg>
+    </div>
+    <div class="loader-num"><span id="loader-num">0</span><small>%</small></div>
+    <div class="loader-label">포차코가 공 챙기는 중…</div>
+  </div>
+  <div class="curtain" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+
+  <div class="cursor" aria-hidden="true"><div class="cursor-ring"><span>CLICK!</span></div><div class="cursor-dot"></div></div>
+
+  <header class="nav">
+    <a class="nav-logo" href="#top" data-magnetic>POCHACCO<sup>®</sup></a>
+    <nav class="nav-links">
+      <a href="#profile">프로필</a><a href="#personality">성격</a><a href="#sports">스포츠</a><a href="#icecream">최애 간식</a>
+    </nav>
+    <button class="sound-btn" id="sound" data-magnetic aria-pressed="false">
+      <span class="eq"><i></i><i></i><i></i><i></i></span> SOUND <b>OFF</b>
+    </button>
+    <div class="nav-progress"><i id="progress"></i></div>
+  </header>
+
+  <canvas id="stage" aria-label="3D 포차코. 클릭하면 점프하고, 드래그하면 빙글 돌아요."></canvas>
+  <div id="bubble" class="bubble" aria-live="polite"></div>
+
+  <main>
+    <!-- HERO -->
+    <section id="top" class="hero" data-scene="hero">
+      <div class="sunburst" aria-hidden="true"></div>
+      <div class="halftone" aria-hidden="true"></div>
+      <h1 class="hero-title" aria-label="POCHACCO">
+        <span class="ch">P</span><span class="ch">O</span><span class="ch">C</span><span class="ch">H</span><span class="ch">A</span><span class="ch">C</span><span class="ch">C</span><span class="ch">O</span>
+      </h1>
+      <div class="hero-kicker reveal-hero">
+        <span class="pill">SANRIO CHARACTER</span><span class="pill pill-red">SINCE 1989</span>
+      </div>
+
+      <svg class="badge-spin reveal-hero" viewBox="0 0 200 200" aria-hidden="true">
+        <defs><path id="circ" d="M100,100 m-74,0 a74,74 0 1,1 148,0 a74,74 0 1,1 -148,0"/></defs>
+        <circle cx="100" cy="100" r="96" class="badge-bg"/>
+        <text><textPath href="#circ">LET'S PLAY ✦ POCHACCO ✦ LET'S PLAY ✦ POCHACCO ✦ </textPath></text>
+        <use href="#paw" x="70" y="70" width="60" height="60" class="badge-paw"/>
+      </svg>
+
+      <div class="sticker s1 reveal-hero" aria-hidden="true">왈!</div>
+      <div class="sticker s2 reveal-hero" aria-hidden="true">★</div>
+
+      <div class="hero-foot">
+        <p class="hero-copy reveal-hero">호기심 가득, 에너지 넘치는<br><b>스포츠 강아지 포차코</b>를 소개할게요.</p>
+        <div class="scroll-hint reveal-hero"><span class="mouse"><i></i></span>SCROLL</div>
+        <p class="hero-tip reveal-hero">포차코를 <b>클릭</b>하면 점프!<br><b>드래그</b>하면 빙글빙글~</p>
+      </div>
+    </section>
+
+    <!-- MARQUEE -->
+    <div class="marquee-wrap" aria-hidden="true">
+      <div class="marquee m1"><div class="marquee-track">
+        <span>BASKETBALL</span><em>✦</em><span>SOCCER</span><em>✦</em><span>BANANA ICE CREAM</span><em>✦</em><span>CURIOUS PUPPY</span><em>✦</em><span>ALWAYS RUNNING</span><em>✦</em>
+      </div></div>
+      <div class="marquee m2"><div class="marquee-track">
+        <span>농구</span><em>●</em><span>축구</span><em>●</em><span>바나나 아이스크림</span><em>●</em><span>호기심 대장</span><em>●</em><span>가만히 못 있어</span><em>●</em>
+      </div></div>
+    </div>
+
+    <!-- PROFILE -->
+    <section id="profile" class="profile" data-scene="profile">
+      <div class="profile-inner">
+        <div class="sec-head">
+          <span class="sec-num">01 — PROFILE</span>
+          <h2 class="split">안녕, 포차코!</h2>
+          <p class="reveal">빨간 티셔츠에 한쪽 귀는 쫑긋, 한쪽 귀는 펄럭. 1989년 산리오에서 태어난 하얀 강아지예요. 뭐든지 해보고 싶은 호기심쟁이랍니다.</p>
+        </div>
+        <div class="cards">
+          <article class="card reveal" data-tilt>
+            <span class="card-label">DEBUT</span>
+            <strong class="card-big"><span data-count="1989">0</span></strong>
+            <p>산리오에서 첫 등장! 올해로 <b><span data-count="37">0</span>년차</b> 인기 강아지.</p>
+          </article>
+          <article class="card card-red reveal" data-tilt>
+            <span class="card-label">BIRTHDAY</span>
+            <strong class="card-big">2/<span data-count="29">0</span></strong>
+            <p>4년에 딱 한 번 돌아오는 윤일 생일. 그래서 더 특별해요.</p>
+          </article>
+          <article class="card card-blue reveal" data-tilt>
+            <span class="card-label">LOVES</span>
+            <strong class="card-big card-word">SPORTS</strong>
+            <p>농구도 축구도, 공만 있으면 어디든 달려가요.</p>
+          </article>
+          <article class="card card-yellow reveal" data-tilt>
+            <span class="card-label">FAVORITE FOOD</span>
+            <strong class="card-big card-word">🍌🍦</strong>
+            <p>세상에서 제일 좋아하는 건 <b>바나나 아이스크림</b>.</p>
+          </article>
+        </div>
+        <div class="stats reveal">
+          <div class="stat"><span>호기심</span><div class="bar"><i data-bar="100"></i></div><b>100</b></div>
+          <div class="stat"><span>에너지</span><div class="bar"><i data-bar="100"></i></div><b>∞</b></div>
+          <div class="stat"><span>공 사랑</span><div class="bar"><i data-bar="96"></i></div><b>96</b></div>
+          <div class="stat"><span>가만히 있기</span><div class="bar"><i data-bar="4"></i></div><b>4</b></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PERSONALITY (pinned horizontal run) -->
+    <section id="personality" class="personality" data-scene="personality">
+      <div class="pin">
+        <div class="run-ground" aria-hidden="true"><i></i></div>
+        <div class="track">
+          <div class="panel panel-intro">
+            <span class="sec-num">02 — PERSONALITY</span>
+            <h2 class="split">포차코는<br>어떤 강아지?</h2>
+            <p class="reveal">스크롤하면 포차코가 달려요 →</p>
+          </div>
+          <div class="panel">
+            <span class="panel-idx">A</span>
+            <div class="panel-word" data-word>CURIOUS</div>
+            <h3>호기심 대장</h3>
+            <p>처음 보는 건 일단 킁킁. 궁금한 건 절대 못 참아요.</p>
+          </div>
+          <div class="panel">
+            <span class="panel-idx">B</span>
+            <div class="panel-word" data-word>ENERGETIC</div>
+            <h3>에너지 폭발</h3>
+            <p>가만히 앉아 있는 게 세상에서 제일 어려운 일.</p>
+          </div>
+          <div class="panel">
+            <span class="panel-idx">C</span>
+            <div class="panel-word" data-word>CHALLENGER</div>
+            <h3>일단 해보기</h3>
+            <p>새로운 운동? 새로운 놀이? 생각보다 몸이 먼저 나가요.</p>
+          </div>
+          <div class="panel">
+            <span class="panel-idx">D</span>
+            <div class="panel-word" data-word>FRIENDLY</div>
+            <h3>같이가 좋아</h3>
+            <p>혼자 뛰는 것보다 친구랑 같이 뛰는 게 백 배 신나요.</p>
+          </div>
+        </div>
+        <div class="run-meter" aria-hidden="true"><i id="run-meter"></i><span id="run-m">0m</span></div>
+      </div>
+    </section>
+
+    <!-- SPORTS -->
+    <section id="sports" class="sports" data-scene="sports">
+      <svg class="court" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <path d="M800 0 V900"/><circle cx="800" cy="450" r="150"/><circle cx="800" cy="450" r="40"/>
+        <path d="M0 150 H260 V750 H0"/><path d="M1600 150 H1340 V750 H1600"/>
+        <path d="M0 60 C 560 60 560 840 0 840"/><path d="M1600 60 C 1040 60 1040 840 1600 840"/>
+        <rect x="20" y="20" width="1560" height="860" rx="10"/>
+      </svg>
+      <div class="sports-inner">
+        <div class="sec-head">
+          <span class="sec-num">03 — SPORTS</span>
+          <h2 class="split">농구 한 판<br>할래?</h2>
+          <p class="reveal">운동이라면 뭐든 좋아하는 포차코. 특히 농구랑 축구는 진심이에요. 게이지가 <b class="hl">노란 구간</b>에 들어왔을 때 슛!</p>
+        </div>
+        <div class="game no-stage reveal">
+          <div class="scoreboard">
+            <div><small>SCORE</small><b id="score">0</b></div>
+            <div><small>STREAK</small><b id="streak">0</b></div>
+            <div><small>BEST</small><b id="best">0</b></div>
+          </div>
+          <div class="meter"><div class="meter-zone"></div><div class="meter-needle" id="needle"></div></div>
+          <button class="shoot-btn" id="shoot" data-magnetic><span>SHOOT!</span></button>
+          <p class="game-tip">스페이스바로도 쏠 수 있어요</p>
+        </div>
+      </div>
+      <div class="shot-text" id="shot-text" aria-live="polite"></div>
+    </section>
+
+    <!-- ICE CREAM -->
+    <section id="icecream" class="icecream" data-scene="icecream">
+      <div class="drips" aria-hidden="true"></div>
+      <div class="ice-inner">
+        <span class="sec-num">04 — FAVORITE</span>
+        <h2 class="split big-split">BANANA<br>ICE CREAM</h2>
+        <p class="ice-ko reveal">바나나 아이스크림 한 입이면<br>기분이 하늘까지 날아가요.</p>
+        <button class="pill-btn reveal" id="treat" data-magnetic>🍦 하나 더 주기</button>
+      </div>
+    </section>
+
+    <!-- OUTRO -->
+    <section id="outro" class="outro" data-scene="outro">
+      <div class="sunburst" aria-hidden="true"></div>
+      <h2 class="outro-title split">LET'S<br>PLAY!</h2>
+      <p class="reveal">오늘도 뛰어놀 준비 완료. 포차코랑 같이 놀자!</p>
+      <button class="party-btn reveal" id="party" data-magnetic><span>포차코랑 놀기</span></button>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-marquee" aria-hidden="true"><div class="marquee-track"><span>SEE YOU AGAIN ✦ 또 놀러와 ✦ SEE YOU AGAIN ✦ 또 놀러와 ✦</span></div></div>
+    <p>비공식 팬 페이지 · Pochacco © Sanrio Co., Ltd. · 페이지 속 모든 3D 오브젝트는 three.js 코드로 직접 만들었어요.</p>
+  </footer>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
